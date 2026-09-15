@@ -1,6 +1,6 @@
 # Onyx
 
-> Encrypted data marketplace on Midnight Network — where sellers keep data private until payment clears.
+> Encrypted data marketplace on Midnight Network where sellers keep data private until payment clears.
 
 ## What is Onyx?
 
@@ -296,9 +296,6 @@ PROOF_SERVER_URL=http://localhost:6300
 | **Climate** | Sensor data | Insurance companies | Risk modeling |
 | **Genomics** | Genetic markers | Pharma/biotech | Drug discovery |
 
-## Contributing
-
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) first.
 
 ## License
 
