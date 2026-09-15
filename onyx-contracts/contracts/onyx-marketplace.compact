@@ -1,0 +1,327 @@
+// ============================================================================
+// ONYX MARKETPLACE — Encrypted Data Marketplace on Midnight Network
+// ============================================================================
+//
+// A privacy-preserving data marketplace where:
+//   - Sellers list data by committing to a hash (data stays private until purchase)
+//   - Buyers pay into escrow to access the data commitment
+//   - A dispute mechanism protects both parties
+//   - The admin (deployer) can resolve disputes
+//
+// Privacy model:
+//   - Data content is NEVER stored on-chain (only commitment hashes)
+//   - Seller identity is hidden behind a public key hash
+//   - Buyer identity is hidden behind a public key hash
+//   - Only the admin can resolve disputes (role-based access)
+//
+// State machine:  active -> sold -> (disputed -> resolved | completed)
+//                                       |                      |
+//                                       +------- completed ----+
+//
+// ============================================================================
+
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+// ============================================================================
+// CUSTOM TYPES
+// ============================================================================
+
+// Listing lifecycle states
+export enum ListingState { active, sold, disputed, completed }
+
+// ============================================================================
+// LEDGER STATE
+// ============================================================================
+
+// Admin identity (deployer) — sealed so it cannot change after deployment
+export sealed ledger admin: Bytes<32>;
+
+// Listing data stored as separate Maps (flattened from struct)
+// Key: listing ID (hash of seller + nonce)
+export ledger listingSeller: Map<Bytes<32>, Bytes<32>>;         // seller public key hash
+export ledger listingDataCommitment: Map<Bytes<32>, Bytes<32>>; // persistentCommit of data
+export ledger listingPrice: Map<Bytes<32>, Uint<64>>;           // price in DUST
+export ledger listingState: Map<Bytes<32>, ListingState>;       // lifecycle state
+export ledger listingBuyer: Map<Bytes<32>, Bytes<32>>;          // buyer public key hash (zero if unsold)
+
+// Escrow: listing ID -> locked payment amount
+export ledger escrow: Map<Bytes<32>, Uint<64>>;
+
+// Counters for tracking
+export ledger listingCount: Counter;
+export ledger completedCount: Counter;
+
+// ============================================================================
+// WITNESS DECLARATIONS
+// ============================================================================
+
+// Returns the caller's secret key for identity derivation
+witness local_secret_key(): Bytes<32>;
+
+// Returns a random salt for commitment generation
+witness get_random_salt(): Bytes<32>;
+
+// Stores a listing salt for later retrieval
+witness store_listing_salt(listingId: Bytes<32>, salt: Bytes<32>): [];
+
+// Retrieves a listing salt
+witness retrieve_listing_salt(listingId: Bytes<32>): Bytes<32>;
+
+// ============================================================================
+// HELPER CIRCUITS
+// ============================================================================
+
+// Derive a public key hash from a secret key
+// Domain separator "onyx:pk:" ensures uniqueness to this contract
+circuit get_public_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([
+    pad(32, "onyx:pk:"),
+    sk
+  ]);
+}
+
+// Generate a unique listing ID from seller identity and a random nonce
+circuit compute_listing_id(sellerPk: Bytes<32>, nonce: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([
+    pad(32, "onyx:listing:"),
+    persistentHash<Vector<2, Bytes<32>>>([sellerPk, nonce])
+  ]);
+}
+
+// Compute a data commitment from data hash and salt
+// Uses persistentCommit so the commitment is hiding and binding
+circuit compute_data_commitment(dataHash: Bytes<32>, salt: Bytes<32>): Bytes<32> {
+  return persistentCommit<Vector<2, Bytes<32>>>(
+    [dataHash, pad(32, "onyx:data:")],
+    salt
+  );
+}
+
+// ============================================================================
+// CONSTRUCTOR
+// ============================================================================
+
+constructor() {
+  // The deployer becomes the admin. disclose() is required because the
+  // value derives from a witness (local_secret_key).
+  admin = disclose(get_public_key(local_secret_key()));
+}
+
+// ============================================================================
+// LIST DATA — Seller lists encrypted data for sale
+// ============================================================================
+
+// listData() commits a data listing to the marketplace.
+//
+// The seller provides:
+//   - dataHash: a hash of the data they want to sell (off-chain computed)
+//   - price: the price in DUST tokens
+//
+// Privacy: The actual data never appears on-chain. Only the commitment
+// hash is stored, which hides the data content behind a random salt.
+export circuit listData(dataHash: Bytes<32>, price: Uint<64>): Bytes<32> {
+  // Price must be positive
+  assert(disclose(price > (0 as Uint<64>)), "Price must be positive");
+
+  // Derive seller identity
+  const sk = local_secret_key();
+  const sellerPk = get_public_key(sk);
+
+  // Generate listing ID
+  const nonce = get_random_salt();
+  const listingId = compute_listing_id(disclose(sellerPk), disclose(nonce));
+
+  // Store the salt off-chain for potential dispute resolution
+  const salt = get_random_salt();
+  store_listing_salt(disclose(listingId), disclose(salt));
+
+  // Compute data commitment
+  const dataCommitment = compute_data_commitment(disclose(dataHash), disclose(salt));
+
+  // Store listing data in separate Maps
+  listingSeller.insert(disclose(listingId), disclose(sellerPk));
+  listingDataCommitment.insert(disclose(listingId), disclose(dataCommitment));
+  listingPrice.insert(disclose(listingId), disclose(price));
+  listingState.insert(disclose(listingId), ListingState.active);
+  listingBuyer.insert(disclose(listingId), pad(32, ""));
+
+  listingCount.increment(1);
+
+  return disclose(listingId);
+}
+
+// ============================================================================
+// BUY LISTING — Buyer purchases access to data
+// ============================================================================
+
+// buyListing() allows a buyer to purchase a listed dataset.
+//
+// The buyer pays the listed price, which goes into escrow.
+// The data commitment is revealed to the buyer (they can verify it).
+//
+// Privacy: The buyer's identity is hidden behind their public key hash.
+// The data content remains private — only the commitment is visible.
+export circuit buyListing(listingId: Bytes<32>): [] {
+  // Verify listing exists and is active
+  assert(listingState.member(disclose(listingId)), "Listing not found");
+  assert(disclose(listingState.lookup(disclose(listingId)) == ListingState.active), "Listing not active");
+
+  // Derive buyer identity
+  const sk = local_secret_key();
+  const buyerPk = get_public_key(sk);
+
+  // Buyer cannot be the seller (prevent self-purchase)
+  assert(disclose(buyerPk != listingSeller.lookup(disclose(listingId))), "Cannot buy your own listing");
+
+  // Record the buyer and update state
+  listingBuyer.insert(disclose(listingId), disclose(buyerPk));
+  listingState.insert(disclose(listingId), ListingState.sold);
+
+  // Lock payment in escrow
+  const price = listingPrice.lookup(disclose(listingId));
+  escrow.insert(disclose(listingId), disclose(price));
+}
+
+// ============================================================================
+// CONFIRM DELIVERY — Buyer confirms receipt of data
+// ============================================================================
+
+// confirmDelivery() finalizes the sale after the buyer verifies the data.
+//
+// The escrowed payment is released (removed from escrow).
+// Both parties' identities remain on-chain but the data content stays private.
+export circuit confirmDelivery(listingId: Bytes<32>): [] {
+  // Verify listing exists and is sold
+  assert(listingState.member(disclose(listingId)), "Listing not found");
+  assert(disclose(listingState.lookup(disclose(listingId)) == ListingState.sold), "Listing not in sold state");
+
+  // Only the buyer can confirm delivery
+  const sk = local_secret_key();
+  const buyerPk = get_public_key(sk);
+  assert(disclose(buyerPk == listingBuyer.lookup(disclose(listingId))), "Only buyer can confirm delivery");
+
+  // Update listing state to completed
+  listingState.insert(disclose(listingId), ListingState.completed);
+
+  // Release escrow (payment goes to seller — in a real system, this would
+  // transfer DUST tokens to the seller's address)
+  escrow.remove(disclose(listingId));
+  completedCount.increment(1);
+}
+
+// ============================================================================
+// DISPUTE LISTING — Either party can raise a dispute
+// ============================================================================
+
+// disputeListing() allows the buyer or seller to dispute a sale.
+//
+// The listing enters a disputed state. The admin will resolve it.
+// This protects both parties in case of fraud or non-delivery.
+export circuit disputeListing(listingId: Bytes<32>): [] {
+  // Verify listing exists and is sold (disputes only during active escrow)
+  assert(listingState.member(disclose(listingId)), "Listing not found");
+  assert(disclose(listingState.lookup(disclose(listingId)) == ListingState.sold), "Listing not in sold state");
+
+  // Only buyer or seller can dispute
+  const sk = local_secret_key();
+  const disputant = get_public_key(sk);
+  const seller = listingSeller.lookup(disclose(listingId));
+  const buyer = listingBuyer.lookup(disclose(listingId));
+  const isSeller = disclose(disputant == seller);
+  const isBuyer = disclose(disputant == buyer);
+  assert(isSeller || isBuyer, "Only buyer or seller can dispute");
+
+  // Update listing state to disputed
+  listingState.insert(disclose(listingId), ListingState.disputed);
+}
+
+// ============================================================================
+// RESOLVE DISPUTE — Admin resolves a disputed sale
+// ============================================================================
+
+// resolveDispute() allows the admin to resolve a dispute.
+//
+// If refundBuyer is true, the escrow is returned to the buyer.
+// If false, the payment goes to the seller.
+//
+// Access control: Only the deployer (admin) can resolve disputes.
+export circuit resolveDispute(listingId: Bytes<32>, refundBuyer: Boolean): [] {
+  // Verify listing exists and is disputed
+  assert(listingState.member(disclose(listingId)), "Listing not found");
+  assert(disclose(listingState.lookup(disclose(listingId)) == ListingState.disputed), "Listing not in disputed state");
+
+  // Only admin can resolve disputes
+  const sk = local_secret_key();
+  const caller = get_public_key(sk);
+  assert(disclose(caller == admin), "Only admin can resolve disputes");
+
+  // Update listing state to completed
+  listingState.insert(disclose(listingId), ListingState.completed);
+
+  // Handle escrow based on dispute resolution
+  if (disclose(refundBuyer)) {
+    // Refund buyer — escrow returned (in real system, transfer back to buyer)
+    escrow.remove(disclose(listingId));
+  } else {
+    // Pay seller — escrow released (in real system, transfer to seller)
+    escrow.remove(disclose(listingId));
+    completedCount.increment(1);
+  }
+}
+
+// ============================================================================
+// READ-ONLY CIRCUITS
+// ============================================================================
+
+// Get listing seller
+export circuit getListingSeller(listingId: Bytes<32>): Bytes<32> {
+  assert(listingSeller.member(disclose(listingId)), "Listing not found");
+  return listingSeller.lookup(disclose(listingId));
+}
+
+// Get listing data commitment
+export circuit getListingDataCommitment(listingId: Bytes<32>): Bytes<32> {
+  assert(listingDataCommitment.member(disclose(listingId)), "Listing not found");
+  return listingDataCommitment.lookup(disclose(listingId));
+}
+
+// Get listing price
+export circuit getListingPrice(listingId: Bytes<32>): Uint<64> {
+  assert(listingPrice.member(disclose(listingId)), "Listing not found");
+  return listingPrice.lookup(disclose(listingId));
+}
+
+// Get listing state
+export circuit getListingState(listingId: Bytes<32>): ListingState {
+  assert(listingState.member(disclose(listingId)), "Listing not found");
+  return listingState.lookup(disclose(listingId));
+}
+
+// Get listing buyer
+export circuit getListingBuyer(listingId: Bytes<32>): Bytes<32> {
+  assert(listingBuyer.member(disclose(listingId)), "Listing not found");
+  return listingBuyer.lookup(disclose(listingId));
+}
+
+// Get escrow amount for a listing
+export circuit getEscrow(listingId: Bytes<32>): Uint<64> {
+  assert(escrow.member(disclose(listingId)), "No escrow for this listing");
+  return escrow.lookup(disclose(listingId));
+}
+
+// Get total number of listings
+export circuit getTotalListings(): Uint<64> {
+  return listingCount.read();
+}
+
+// Get total number of completed sales
+export circuit getCompletedSales(): Uint<64> {
+  return completedCount.read();
+}
+
+// Get admin address
+export circuit getAdmin(): Bytes<32> {
+  return admin;
+}
