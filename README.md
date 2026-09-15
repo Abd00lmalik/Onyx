@@ -10,7 +10,7 @@ Onyx is a privacy-first data marketplace built on Midnight Network. Sellers list
 
 Data is the most valuable asset in the digital economy, but the current model is broken:
 
-- **Sellers** must reveal data to prove it exists and is valuable — then buyers have no reason to pay
+- **Sellers** must reveal data to prove it exists and is valuable then buyers have no reason to pay
 - **Buyers** must trust sellers that the data is real, complete, and not tampered with
 - **Intermediaries** (Google, Bloomberg, Reuters) take 40-70% cuts as trusted middlemen
 - **Data breaches** happen because data is stored centrally and exposed in plaintext
