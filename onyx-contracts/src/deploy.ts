@@ -169,9 +169,29 @@ async function createProviders(walletCtx: WalletContext) {
   };
 }
 
+// ─── Progress file logging ─────────────────────────────────────────────────────
+
+const PROGRESS_FILE = path.resolve(__dirname, '..', '.deploy-progress.json');
+
+function writeProgress(phase: string, detail: string, pct?: number) {
+  const entry = {
+    phase,
+    detail,
+    pct: pct ?? null,
+    timestamp: new Date().toISOString(),
+    elapsed: Math.round((Date.now() - deployStart) / 1000),
+  };
+  fs.writeFileSync(PROGRESS_FILE, JSON.stringify(entry, null, 2));
+}
+
+let deployStart = Date.now();
+
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  deployStart = Date.now();
+  writeProgress('init', 'Starting deployment...');
+
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
   console.log(`║  Deploy onyx-marketplace to ${network}`);
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
@@ -180,6 +200,7 @@ async function main() {
 
   console.log('─── Wallet setup ───────────────────────────────────────────────\n');
   console.log('  Creating wallet...');
+  writeProgress('wallet', 'Creating wallet...');
   const walletCtx = await createWallet({ network, networkConfig, seed });
   const restoredCount = Object.values(walletCtx.restored).filter(Boolean).length;
   if (restoredCount > 0) {
@@ -189,6 +210,7 @@ async function main() {
   console.log('  Syncing with network...');
   console.log('  ℹ  This may take several minutes depending on network size.');
   console.log('     RPC disconnection messages during sync are normal and can be safely ignored.\n');
+  writeProgress('sync', 'Starting wallet sync (shielded + unshielded + DUST)...');
   const syncStart = Date.now();
   const syncInterval = setInterval(() => {
     const elapsed = Math.round((Date.now() - syncStart) / 1000);
@@ -196,6 +218,7 @@ async function main() {
   }, 5000);
   const state = await walletCtx.wallet.waitForSyncedState();
   clearInterval(syncInterval);
+  writeProgress('sync', 'Wallet sync complete');
   process.stdout.write('\r  ✓ Synced with network.                                      \n');
 
   // Persist sync state now so a later deploy failure doesn't waste the sync work.
@@ -259,6 +282,7 @@ async function main() {
 
   // Register for DUST.
   console.log('─── DUST Token Setup ───────────────────────────────────────────\n');
+  writeProgress('dust-register', 'Checking DUST registration...');
   const dustState = await Rx.firstValueFrom(walletCtx.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
 
   const unregisteredUtxos = dustState.unshielded.availableCoins.filter(
@@ -281,6 +305,7 @@ async function main() {
 
   if (dustState.dust.balance(new Date()) === 0n) {
     console.log('  Waiting for DUST tokens...');
+    writeProgress('dust-wait', 'Waiting for DUST to generate...');
     try {
       await Rx.firstValueFrom(
         walletCtx.wallet.state().pipe(
@@ -312,6 +337,7 @@ async function main() {
 
   // Deploy.
   console.log('─── Deploy Contract ────────────────────────────────────────────\n');
+  writeProgress('deploy', 'Deploying contract...');
 
   console.log('  Checking proof server...');
   const proofServerReady = await waitForProofServer();
@@ -419,6 +445,7 @@ async function main() {
   const contractAddress = deployed.deployTxData.public.contractAddress;
   console.log('  ✅ Contract deployed successfully!\n');
   console.log(`  Contract Address: ${contractAddress}\n`);
+  writeProgress('done', `Deployed at ${contractAddress}`);
 
   recordDeployment(network, contractAddress, address.toString());
   console.log('  Saved to .midnight-state.json\n');
