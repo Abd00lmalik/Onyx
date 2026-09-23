@@ -46,6 +46,10 @@ docker-compose.override.yml
 *.prover
 *.verifier
 
+# Keep contract compile output and frontend ZK artifacts in the repo
+!onyx-contracts/contracts/managed/**
+!frontend/public/zk-artifacts/**
+
 # Deployment files
 deployments/
 

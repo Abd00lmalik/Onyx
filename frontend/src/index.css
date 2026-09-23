@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cream: #FFFBEB;
+  --color-cream-dark: #FEF3C7;
+  --color-cream-light: #FEFCE8;
+  --color-amber-border: #FDE68A;
+  --color-amber-primary: #D97706;
+  --color-amber-hover: #B45309;
+  --color-amber-active: #92400E;
+  --color-amber-muted: #92400E;
+  --color-foreground: #451A03;
+  --color-foreground-light: #78350F;
+  --color-success: #16A34A;
+  --color-success-bg: #DCFCE7;
+  --color-danger: #DC2626;
+  --color-danger-bg: #FEE2E2;
+  --color-gray-badge: #6B7280;
+  --color-gray-badge-bg: #F3F4F6;
+
+  --font-display: 'Playfair Display', serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'Fira Code', monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-cream);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Background utilities */
+.bg-dot-grid {
+  background-image: radial-gradient(rgba(217, 119, 6, 0.12) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Scroll reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; filter: blur(8px); }
+  50% { opacity: 1; filter: blur(12px); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.float-animation {
+  animation: float 4.5s ease-in-out infinite;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-cream-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-amber-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-amber-primary);
+}
+
+/* Selection */
+::selection {
+  background-color: rgba(217, 119, 6, 0.15);
+  color: var(--color-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-glow,
+  .float-animation {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
