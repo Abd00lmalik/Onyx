@@ -1,32 +1,53 @@
-# React + TypeScript + Vite
+# Onyx Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite marketplace UI for the Onyx encrypted data marketplace on Midnight Network.
 
-Currently, two official plugins are available:
+## Structure
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```
+src/
+├── pages/              # HomePage, BrowsePage, ListPage, ListingDetailPage, DashboardPage
+├── components/
+│   ├── layout/         # Header, Footer, WaveBackground
+│   ├── marketplace/    # ListingCard, ListingGrid, SearchBar, ListDataForm, BuyDialog
+│   ├── ui/             # Button, Card, Badge, Dialog, Input, Reveal, Spinner
+│   └── wallet/         # WalletConnect
+├── hooks/              # useWallet, useMarketplace, useContract
+├── lib/                # mockData, midnight, constants, witnesses
+└── types/              # TypeScript definitions
+```
 
-## React Compiler
+## Develop
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm install
+npm run dev
+```
 
-## Expanding the Oxlint configuration
+## Build
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+```bash
+npm run build
+```
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## Deploy on Vercel
+
+This folder is ready for Vercel:
+
+1. Import the GitHub repo `Abd00lmalik/Onyx`
+2. Set **Root Directory** to `frontend` (or leave blank and use the root `vercel.json`)
+3. Framework preset: **Vite**
+4. Build command: `npm run build`
+5. Output directory: `dist`
+6. Deploy
+
+SPA rewrites are configured in `vercel.json` so routes like `/browse` and `/listing/:id` work on refresh.
+
+## Lint
+
+```bash
+npm run lint
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+

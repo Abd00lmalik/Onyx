@@ -1,0 +1,7 @@
+{
+  "framework": "vite",
+  "installCommand": "PUPPETEER_SKIP_DOWNLOAD=true npm ci --prefix frontend",
+  "buildCommand": "npm run build --prefix frontend",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}

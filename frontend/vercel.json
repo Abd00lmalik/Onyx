@@ -1,0 +1,8 @@
+{
+  "framework": "vite",
+  "installCommand": "PUPPETEER_SKIP_DOWNLOAD=true npm ci",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
+

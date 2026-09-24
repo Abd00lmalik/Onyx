@@ -15,6 +15,47 @@
 
 Onyx is a privacy-first data marketplace built on Midnight Network. Sellers list datasets without revealing contents. Buyers verify quality through ZK proofs before purchase. Everyone keeps their competitive advantage private.
 
+## Repository Layout
+
+```
+Onyx/
+├── frontend/                 # React + TypeScript + Vite UI (TSX components under frontend/src)
+│   ├── src/pages/            # HomePage, BrowsePage, ListPage, ListingDetailPage, DashboardPage
+│   ├── src/components/       # layout, marketplace, ui, wallet
+│   ├── src/hooks/            # useWallet, useMarketplace, useContract
+│   ├── src/lib/              # mockData, midnight, constants, witnesses
+│   └── vercel.json           # SPA rewrites for Vercel
+├── onyx-contracts/           # Compact contract + deployment scripts
+│   ├── contracts/
+│   │   ├── onyx-marketplace.compact
+│   │   └── managed/          # Compile output (zkir, keys, contract JS)
+│   └── scripts/              # e2e-check, clean
+├── screenshots/              # Compile and deploy evidence
+└── vercel.json               # Monorepo Vercel build config
+```
+
+### Frontend
+
+All UI source is TypeScript React (`.tsx`) under `frontend/src/`:
+
+- `frontend/src/App.tsx` and `frontend/src/main.tsx`
+- Pages: `frontend/src/pages/*.tsx`
+- Components: `frontend/src/components/**/*.tsx`
+
+Local dev:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Deploy on Vercel
+
+1. Import `https://github.com/Abd00lmalik/Onyx`
+2. Use the root `vercel.json` (builds `frontend/`), or set **Root Directory** to `frontend`
+3. Deploy
+
 ## The Problem
 
 Data is the most valuable asset in the digital economy, but the current model is broken:
