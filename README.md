@@ -2,6 +2,12 @@
 
 > Encrypted data marketplace on Midnight Network where sellers keep data private until payment clears.
 
+### Live Website
+
+| | |
+|---|---|
+| **URL** | [https://onyx-market.vercel.app](https://onyx-market.vercel.app) |
+
 ### Deployed on Preprod
 
 | | |
@@ -36,11 +42,16 @@ Onyx/
 
 ### Frontend
 
-All UI source is TypeScript React (`.tsx`) under `frontend/src/`:
+All UI source is TypeScript React (`.tsx`) under `frontend/src/` (23 `.tsx` files):
 
-- `frontend/src/App.tsx` and `frontend/src/main.tsx`
-- Pages: `frontend/src/pages/*.tsx`
-- Components: `frontend/src/components/**/*.tsx`
+- `frontend/src/App.tsx`, `frontend/src/main.tsx`
+- Pages: `frontend/src/pages/HomePage.tsx`, `BrowsePage.tsx`, `ListPage.tsx`, `ListingDetailPage.tsx`, `DashboardPage.tsx`
+- Layout: `frontend/src/components/layout/Header.tsx`, `Footer.tsx`, `WaveBackground.tsx`
+- Marketplace: `ListingCard.tsx`, `ListingGrid.tsx`, `SearchBar.tsx`, `ListDataForm.tsx`, `BuyDialog.tsx`
+- UI: `Button.tsx`, `Card.tsx`, `Badge.tsx`, `Dialog.tsx`, `Input.tsx`, `Reveal.tsx`, `Spinner.tsx`
+- Wallet: `frontend/src/components/wallet/WalletConnect.tsx`
+
+Live site: [https://onyx-market.vercel.app](https://onyx-market.vercel.app)
 
 Local dev:
 
@@ -51,6 +62,8 @@ npm run dev
 ```
 
 ### Deploy on Vercel
+
+Live site: [https://onyx-market.vercel.app](https://onyx-market.vercel.app)
 
 1. Import `https://github.com/Abd00lmalik/Onyx`
 2. Use the root `vercel.json` (builds `frontend/`), or set **Root Directory** to `frontend`

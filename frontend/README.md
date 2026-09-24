@@ -2,6 +2,10 @@
 
 React + TypeScript + Vite marketplace UI for the Onyx encrypted data marketplace on Midnight Network.
 
+**Live site:** [https://onyx-market.vercel.app](https://onyx-market.vercel.app)
+
+All page and component files are `.tsx` under `src/` (23 TypeScript React files).
+
 ## Structure
 
 ```
@@ -31,6 +35,8 @@ npm run build
 ```
 
 ## Deploy on Vercel
+
+Live site: [https://onyx-market.vercel.app](https://onyx-market.vercel.app)
 
 This folder is ready for Vercel:
 
