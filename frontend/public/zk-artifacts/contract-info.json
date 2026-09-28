@@ -21,6 +21,20 @@
             "type-name": "Uint",
             "maxval": 18446744073709551615
           }
+        },
+        {
+          "name": "meta",
+          "type": {
+            "type-name": "Bytes",
+            "length": 512
+          }
+        },
+        {
+          "name": "sellerAddr",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
         }
       ],
       "result-type": {
@@ -35,6 +49,13 @@
       "arguments": [
         {
           "name": "listingId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        },
+        {
+          "name": "buyerAddr",
           "type": {
             "type-name": "Bytes",
             "length": 32
@@ -204,6 +225,24 @@
       "result-type": {
         "type-name": "Bytes",
         "length": 32
+      }
+    },
+    {
+      "name": "getListingMeta",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "listingId",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Bytes",
+        "length": 512
       }
     },
     {
@@ -392,8 +431,50 @@
       }
     },
     {
-      "name": "escrow",
+      "name": "listingMeta",
       "index": 6,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Bytes",
+        "length": 512
+      }
+    },
+    {
+      "name": "listingSellerAddr",
+      "index": 7,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "listingBuyerAddr",
+      "index": 8,
+      "exported": true,
+      "storage": "Map",
+      "key": {
+        "type-name": "Bytes",
+        "length": 32
+      },
+      "value": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "escrow",
+      "index": 9,
       "exported": true,
       "storage": "Map",
       "key": {
@@ -407,13 +488,13 @@
     },
     {
       "name": "listingCount",
-      "index": 7,
+      "index": 10,
       "exported": true,
       "storage": "Counter"
     },
     {
       "name": "completedCount",
-      "index": 8,
+      "index": 11,
       "exported": true,
       "storage": "Counter"
     }

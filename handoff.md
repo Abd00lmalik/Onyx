@@ -18,11 +18,10 @@ Everything a new developer (or future AI session) needs to pick up this project 
 
 | Item | Value |
 |---|---|
-| **Contract Address** | `1a7dabae6289b10f94636458b2c749b2396a3c9edc1e46877d4bb8a35a839b51` |
+| **Contract Address** | `a7791112a07144af7da22e51b0a504cc07df513585abf5066d333802e2ca4998` |
 | **Network** | Preprod |
 | **Wallet Address** | `mn_addr_preprod1xra3cc9jxvnjk7l9q8wauxh3mztqvm9yze7u9a2mq6f94ztkxmvqaupl0x` |
-| **Deployer Seed** | `8e4a39bd7c76e8308ff4da71100fa6f2ede92519c4224bdfc98f24b29a066c4501accef5a8d7820bfa6795c31729afdf49b38ff630347aff385b73be5d97dafd` |
-| **Deployer Mnemonic** | `federal dumb raven sun suffer solution equip trap glue obey crumble marble pitch wisdom profit under viable nuclear boy road public curtain model fiscal` |
+| **Deployer Seed / Mnemonic** | Not in the repo. Both live in `onyx-contracts/.midnight-state.json` (`wallets.preprod.seed` / `.mnemonic`), which is gitignored. Pass the phrase to scripts via the `MIDNIGHT_WALLET_MNEMONIC` env var. |
 
 ---
 
@@ -266,7 +265,7 @@ Select-String -Path ".deploy-detached.log" -Pattern "Contract Address"
 Successful deploy shows:
 ```
 Contract deployed successfully!
-Contract Address: 1a7dabae6289b10f94636458b2c749b2396a3c9edc1e46877d4bb8a35a839b51
+Contract Address: a7791112a07144af7da22e51b0a504cc07df513585abf5066d333802e2ca4998
 ```
 
 Deploy takes ~274 seconds (4.5 minutes) with cached wallet state.
@@ -365,5 +364,5 @@ compact compile contracts/onyx-marketplace.compact contracts/managed/onyx-market
 
 ### Contract Address for Submission
 ```
-1a7dabae6289b10f94636458b2c749b2396a3c9edc1e46877d4bb8a35a839b51
+a7791112a07144af7da22e51b0a504cc07df513585abf5066d333802e2ca4998
 ```

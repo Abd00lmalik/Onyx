@@ -1,36 +1,30 @@
-import { useState } from 'react'
 import { Wallet, LogOut } from 'lucide-react'
-import { MOCK_WALLET, formatBalance } from '../../lib/mockData'
+import { useApp } from '../../context/app-context'
+import { formatNight, formatRaw, shortAddress } from '../../lib/format'
 
 export function WalletConnect() {
-  const [connected, setConnected] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const { wallet } = useApp()
 
-  const handleConnect = async () => {
-    setLoading(true)
-    await new Promise(resolve => setTimeout(resolve, 800))
-    setConnected(true)
-    setLoading(false)
+  const handleConnect = () => {
+    void wallet.connect()
   }
 
-  const handleDisconnect = () => {
-    setConnected(false)
-  }
-
-  if (connected) {
+  if (wallet.connected) {
     return (
       <div className="flex items-center gap-3">
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cream-light border border-amber-border">
+        <div
+          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cream-light border border-amber-border"
+          title={wallet.address ?? ''}
+        >
           <div className="w-2 h-2 rounded-full bg-success" />
           <span className="text-xs font-mono text-foreground-light">
-            {MOCK_WALLET.address.slice(0, 6)}...{MOCK_WALLET.address.slice(-4)}
+            {shortAddress(wallet.address ?? '')}
           </span>
-          <span className="text-xs text-amber-muted">
-            {formatBalance(MOCK_WALLET.dustBalance)} DUST
-          </span>
+          <span className="text-xs text-amber-muted">{formatNight(wallet.balance)} NIGHT</span>
+          <span className="text-xs text-amber-muted">{formatRaw(wallet.dustBalance)} DUST</span>
         </div>
         <button
-          onClick={handleDisconnect}
+          onClick={wallet.disconnect}
           className="p-2 rounded-lg hover:bg-cream-dark transition-colors cursor-pointer text-amber-muted hover:text-foreground"
           title="Disconnect"
         >
@@ -41,13 +35,20 @@ export function WalletConnect() {
   }
 
   return (
-    <button
-      onClick={handleConnect}
-      disabled={loading}
-      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-primary text-white text-sm font-medium hover:bg-amber-hover transition-colors duration-200 cursor-pointer disabled:opacity-50"
-    >
-      <Wallet size={16} />
-      {loading ? 'Connecting...' : 'Connect Wallet'}
-    </button>
+    <div className="flex items-center gap-2">
+      {wallet.error && (
+        <span className="hidden md:inline max-w-[220px] truncate text-xs text-danger" title={wallet.error}>
+          {wallet.error}
+        </span>
+      )}
+      <button
+        onClick={handleConnect}
+        disabled={wallet.loading}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-primary text-white text-sm font-medium hover:bg-amber-hover transition-colors duration-200 cursor-pointer disabled:opacity-50"
+      >
+        <Wallet size={16} />
+        {wallet.loading ? 'Connecting...' : 'Connect Wallet'}
+      </button>
+    </div>
   )
 }

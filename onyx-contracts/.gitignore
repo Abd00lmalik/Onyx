@@ -58,3 +58,12 @@ temp/
 
 # Midnight wallet sync state (per-network serialized wallet state cache)
 .midnight-wallet-state/
+
+# Phase 5 E2E: derived buyer wallet's sync-state cache
+.buyer-wallet/
+
+# Deploy runtime artifacts
+.deploy-progress.json
+.deploy-detached.log
+midnight-level-db/
+*.png

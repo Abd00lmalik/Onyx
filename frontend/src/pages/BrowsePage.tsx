@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react'
-import { MOCK_LISTINGS } from '../lib/mockData'
-import type { ListingState } from '../lib/mockData'
+﻿import { useEffect, useMemo, useState } from 'react'
+import type { ListingState } from '../types'
 import { SearchBar } from '../components/marketplace/SearchBar'
 import { ListingGrid } from '../components/marketplace/ListingGrid'
+import { Spinner } from '../components/ui/Spinner'
+import { useApp } from '../context/app-context'
 
 const FILTERS: { label: string; value: ListingState | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -13,20 +14,32 @@ const FILTERS: { label: string; value: ListingState | 'all' }[] = [
 ]
 
 export function BrowsePage() {
+  const { marketplace } = useApp()
+  const { fetchListings, listings, loading, error } = marketplace
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<ListingState | 'all'>('all')
 
+  useEffect(() => {
+    void fetchListings()
+  }, [fetchListings])
+
   const filtered = useMemo(() => {
-    let results = MOCK_LISTINGS
+    let results = listings
     if (filter !== 'all') {
       results = results.filter(l => l.state === filter)
     }
     if (search.trim()) {
       const q = search.toLowerCase()
-      results = results.filter(l => l.id.toLowerCase().includes(q) || l.seller.toLowerCase().includes(q) || l.title.toLowerCase().includes(q) || l.category.toLowerCase().includes(q))
+      results = results.filter(
+        l =>
+          l.id.toLowerCase().includes(q) ||
+          l.seller.toLowerCase().includes(q) ||
+          (l.title ?? '').toLowerCase().includes(q) ||
+          (l.category ?? '').toLowerCase().includes(q),
+      )
     }
     return results
-  }, [search, filter])
+  }, [listings, search, filter])
 
   return (
     <div className="min-h-screen bg-cream pt-20 pb-12">
@@ -59,7 +72,21 @@ export function BrowsePage() {
           </div>
         </div>
 
-        <ListingGrid listings={filtered} />
+        {loading && listings.length === 0 ? (
+          <div className="flex items-center justify-center gap-3 py-16 text-foreground-light">
+            <Spinner size="sm" />
+            <span className="text-sm">Loading listings from the Midnight indexer…</span>
+          </div>
+        ) : (
+          <>
+            {error && (
+              <div className="mb-4 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
+                {error}
+              </div>
+            )}
+            <ListingGrid listings={filtered} />
+          </>
+        )}
       </div>
     </div>
   )

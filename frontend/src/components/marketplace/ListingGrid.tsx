@@ -1,4 +1,4 @@
-import type { Listing } from '../../lib/mockData'
+import type { Listing } from '../../types'
 import { ListingCard } from './ListingCard'
 import { Package } from 'lucide-react'
 import { Button } from '../ui/Button'

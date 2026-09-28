@@ -109,7 +109,19 @@ export async function createWallet(opts: CreateWalletOptions): Promise<WalletCon
     indexerClientConnection: {
       indexerHttpUrl: opts.networkConfig.indexer,
       indexerWsUrl: opts.networkConfig.indexerWS,
+      // Keep the catch-up WebSocket alive (default: none) — long first-time
+      // syncs otherwise drop mid-stream and restart from the cursor.
+      keepAlive: 30_000,
+      // Larger in-flight buffer, reopen the subscription earlier: the defaults
+      // sawtooth between 10000 in-flight and 100, which shows up as repeated
+      // Wallet.Sync errors during a full-history catch-up.
+      bufferSize: 100_000,
+      resumeThreshold: 1_000,
     },
+    // Batch/window knobs for the event stream: default size 10 with 4 ms
+    // spacing caps the apply loop at ~2500 events/s and throttles the
+    // from-seed scan of a brand-new wallet (millions of events).
+    batchUpdates: { size: 500, timeout: 50, spacing: 0 },
     provingServerUrl: new URL(opts.networkConfig.proofServer),
     relayURL: new URL(opts.networkConfig.node.replace(/^http/, 'ws')),
     txHistoryStorage: new NoOpTransactionHistoryStorage(),

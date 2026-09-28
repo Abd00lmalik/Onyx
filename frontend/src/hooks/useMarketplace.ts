@@ -1,18 +1,55 @@
-import { useState, useCallback } from 'react'
-import type { Listing, MarketplaceStats } from '../types'
-import { createProviders } from '../lib/midnight'
+import { useCallback, useState } from 'react'
+import type { Listing, ListingState as ListingStateName, MarketplaceStats } from '@/types'
+import { OnyxLedger, createReadProviders, defaultServiceConfig, initNetwork, type ServiceConfig } from '@/lib/midnight'
+import { bytesToHex, decodeMeta, stateName } from '@/lib/hex'
+import { CONTRACT_ADDRESS } from '@/lib/constants'
+import type { OnyxWalletAdapter } from '@/lib/wallet-adapter'
 
-const CONTRACT_ADDRESS = '1a7dabae6289b10f94636458b2c749b2396a3c9edc1e46877d4bb8a35a839b51'
+const ZERO_ADDRESS = '0'.repeat(64)
 
-function bigintToHex(val: any): string {
-  if (typeof val === 'string') return val
-  if (val instanceof Uint8Array) {
-    return Array.from(val).map(b => b.toString(16).padStart(2, '0')).join('')
-  }
-  return String(val)
+function addressHex(bytes: Uint8Array): string {
+  const hex = bytesToHex(bytes)
+  return hex === ZERO_ADDRESS ? '' : hex
 }
 
-export function useMarketplace(walletAPI: any, walletAddress: string | null) {
+type ContractStateLike = { data: Parameters<typeof OnyxLedger.ledger>[0] }
+
+function readAllListings(contractState: ContractStateLike | null): Listing[] {
+  if (!contractState) return []
+  const state = OnyxLedger.ledger(contractState.data)
+  const result: Listing[] = []
+
+  for (const [id, seller] of state.listingSeller) {
+    const key = id
+    const meta = decodeMeta(state.listingMeta.lookup(key))
+    result.push({
+      id: bytesToHex(key),
+      seller: bytesToHex(seller),
+      sellerAddr: addressHex(state.listingSellerAddr.lookup(key)),
+      buyer: addressHex(state.listingBuyer.lookup(key)),
+      // Only written by buyListing — Map.lookup throws on a missing key.
+      buyerAddr: addressHex(
+        state.listingBuyerAddr.member(key) ? state.listingBuyerAddr.lookup(key) : new Uint8Array(32),
+      ),
+      dataCommitment: bytesToHex(state.listingDataCommitment.lookup(key)),
+      price: state.listingPrice.lookup(key),
+      state: stateName(state.listingState.lookup(key) as number) as ListingStateName,
+      escrow: state.escrow.member(key) ? state.escrow.lookup(key) : 0n,
+      title: meta.title,
+      description: meta.description,
+      category: meta.category,
+      size: meta.size,
+      records: meta.records,
+    })
+  }
+
+  // Listing ids are hashes, so there is no timestamp to order by; sort by id to
+  // keep the rendered order stable across reloads.
+  result.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  return result
+}
+
+export function useMarketplace(adapter?: OnyxWalletAdapter | null, config?: ServiceConfig) {
   const [listings, setListings] = useState<Listing[]>([])
   const [stats, setStats] = useState<MarketplaceStats>({
     totalListings: 0,
@@ -22,105 +59,62 @@ export function useMarketplace(walletAPI: any, walletAddress: string | null) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchListings = useCallback(async () => {
-    if (!walletAPI || !walletAddress) return
+  const serviceConfig = useCallback((): ServiceConfig => {
+    const defaults = defaultServiceConfig()
+    if (config) return config
+    if (adapter) {
+      return {
+        indexerUri: adapter.config.indexerUri || defaults.indexerUri,
+        indexerWsUri: adapter.config.indexerWsUri || defaults.indexerWsUri,
+      }
+    }
+    return defaults
+  }, [adapter, config])
+
+  /** Reads every listing from the indexer; also refreshes stats. Returns the
+   *  decoded list so callers can diff before/after a transaction. */
+  const fetchListings = useCallback(async (): Promise<Listing[]> => {
     setLoading(true)
     setError(null)
     try {
-      const config = await walletAPI.getConfiguration()
-      const providers = await createProviders({
-        indexerUri: config.indexerUri,
-        indexerWsUri: config.indexerWsUri,
-      }, walletAPI, walletAddress)
+      initNetwork()
+      const { publicDataProvider } = createReadProviders(serviceConfig())
+      const contractState = await publicDataProvider.queryContractState(CONTRACT_ADDRESS)
+      const decoded = readAllListings(contractState as never)
+      setListings(decoded)
 
-      const publicState = await providers.publicDataProvider.queryContractState(CONTRACT_ADDRESS)
-      if (!publicState) {
-        setListings([])
-        return
-      }
-
-      const { ledger } = await import('/zk-artifacts/contract/index.js' as string)
-      const ledgerState = ledger(publicState.data)
-
-      const result: Listing[] = []
-
-      if (ledgerState?.listingSeller && typeof ledgerState.listingSeller[Symbol.iterator] === 'function') {
-        for (const [id, seller] of ledgerState.listingSeller) {
-          const idHex = bigintToHex(id)
-          const price = ledgerState.listingPrice?.lookup?.(id) ?? 0n
-          const state = ledgerState.listingState?.lookup?.(id) ?? 'active'
-          const buyer = ledgerState.listingBuyer?.lookup?.(id) ?? ''
-          const dataCommitment = ledgerState.listingDataCommitment?.lookup?.(id) ?? ''
-
-          result.push({
-            id: idHex,
-            seller: bigintToHex(seller),
-            dataCommitment: bigintToHex(dataCommitment),
-            price: typeof price === 'bigint' ? price : BigInt(price),
-            state: String(state) as any,
-            buyer: bigintToHex(buyer),
-          })
-        }
-      }
-
-      setListings(result)
-
-      const totalListings = Number(ledgerState?.listingCount ?? result.length)
-      const completedSales = Number(ledgerState?.completedCount ?? 0)
-      const totalVolume = result.reduce((acc, l) => acc + l.price, 0n)
-
+      const state = contractState ? OnyxLedger.ledger(contractState.data as never) : null
       setStats({
-        totalListings: Number(totalListings),
-        completedSales: Number(completedSales),
-        totalVolume,
+        totalListings: state ? Number(state.listingCount) : decoded.length,
+        completedSales: state ? Number(state.completedCount) : 0,
+        totalVolume: decoded.reduce((acc, listing) => acc + listing.price, 0n),
       })
-    } catch (err: any) {
-      setError(err?.message || 'Failed to fetch listings')
+      return decoded
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch listings')
+      return []
     } finally {
       setLoading(false)
     }
-  }, [walletAPI, walletAddress])
+  }, [serviceConfig])
 
-  const fetchListing = useCallback(async (id: string): Promise<Listing | null> => {
-    if (!walletAPI || !walletAddress) return null
-    try {
-      const config = await walletAPI.getConfiguration()
-      const providers = await createProviders({
-        indexerUri: config.indexerUri,
-        indexerWsUri: config.indexerWsUri,
-      }, walletAPI, walletAddress)
-
-      const publicState = await providers.publicDataProvider.queryContractState(CONTRACT_ADDRESS)
-      if (!publicState) return null
-
-      const { ledger } = await import('/zk-artifacts/contract/index.js' as string)
-      const ledgerState = ledger(publicState.data)
-
-      if (ledgerState?.listingSeller && typeof ledgerState.listingSeller[Symbol.iterator] === 'function') {
-        for (const [listingId, seller] of ledgerState.listingSeller) {
-          const listingIdHex = bigintToHex(listingId)
-          if (listingIdHex === id) {
-            const price = ledgerState.listingPrice?.lookup?.(listingId) ?? 0n
-            const state = ledgerState.listingState?.lookup?.(listingId) ?? 'active'
-            const buyer = ledgerState.listingBuyer?.lookup?.(listingId) ?? ''
-            const dataCommitment = ledgerState.listingDataCommitment?.lookup?.(listingId) ?? ''
-
-            return {
-              id: listingIdHex,
-              seller: bigintToHex(seller),
-              dataCommitment: bigintToHex(dataCommitment),
-              price: typeof price === 'bigint' ? price : BigInt(price),
-              state: String(state) as any,
-              buyer: bigintToHex(buyer),
-            }
-          }
-        }
+  const fetchListing = useCallback(
+    async (id: string): Promise<Listing | null> => {
+      try {
+        initNetwork()
+        const { publicDataProvider } = createReadProviders(serviceConfig())
+        const contractState = await publicDataProvider.queryContractState(CONTRACT_ADDRESS)
+        setError(null)
+        if (!contractState) return null
+        return readAllListings(contractState as never).find(listing => listing.id === id) ?? null
+      } catch (err) {
+        // Surface the failure so a detail page can tell "not found" from "unreachable".
+        setError(err instanceof Error ? err.message : 'Failed to fetch listing')
+        return null
       }
-      return null
-    } catch {
-      return null
-    }
-  }, [walletAPI, walletAddress])
+    },
+    [serviceConfig],
+  )
 
   return {
     listings,

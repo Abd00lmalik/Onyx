@@ -7,13 +7,21 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:smoke": "tsx scripts/phase2-smoke.ts",
+    "test:package": "tsx scripts/phase3-package-test.ts",
+    "test:read": "node scripts/phase2-read-check.mjs",
+    "test:wiring": "tsx scripts/phase4-wiring-test.ts",
+    "test:ui": "node scripts/phase4-ui-check.mjs",
+    "sync:artifacts": "node scripts/sync-artifacts.mjs"
   },
   "dependencies": {
-    "@midnight-ntwrk/compact-runtime": "^0.19.0",
+    "@midnight-ntwrk/compact-runtime": "^0.16.0",
     "@midnight-ntwrk/dapp-connector-api": "^4.0.1",
     "@midnight-ntwrk/midnight-js-contracts": "^4.1.1",
+    "@midnight-ntwrk/midnight-js-dapp-connector-proof-provider": "^4.1.1",
     "@midnight-ntwrk/midnight-js-fetch-zk-config-provider": "^4.1.1",
+    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "^4.1.1",
     "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "^4.1.1",
     "@midnight-ntwrk/midnight-js-level-private-state-provider": "^4.1.1",
     "@midnight-ntwrk/midnight-js-network-id": "^4.1.1",
@@ -34,8 +42,13 @@
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
     "puppeteer": "^25.11.0",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "vite-plugin-node-polyfills": "^0.28.0"
+  },
+  "overrides": {
+    "@midnight-ntwrk/onchain-runtime-v3": "3.0.0"
   },
   "engines": {
     "node": "22.x"

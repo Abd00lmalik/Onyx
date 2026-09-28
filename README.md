@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| **Contract Address** | `1a7dabae6289b10f94636458b2c749b2396a3c9edc1e46877d4bb8a35a839b51` |
+| **Contract Address** | `a7791112a07144af7da22e51b0a504cc07df513585abf5066d333802e2ca4998` |
 | **Network** | Preprod |
 | **Wallet** | `mn_addr_preprod1xra3cc9jxvnjk7l9q8wauxh3mztqvm9yze7u9a2mq6f94ztkxmvqaupl0x` |
 | **Explorer** | [midnightexplorer.com](https://preprod.midnightexplorer.com/) |

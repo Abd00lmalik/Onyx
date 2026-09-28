@@ -4,15 +4,18 @@
 //
 // A privacy-preserving data marketplace where:
 //   - Sellers list data by committing to a hash (data stays private until purchase)
-//   - Buyers pay into escrow to access the data commitment
-//   - A dispute mechanism protects both parties
+//   - Buyers pay NIGHT into contract escrow; the contract holds it until settled
+//   - The escrow is released to the seller on confirm, or refunded on dispute
 //   - The admin (deployer) can resolve disputes
 //
 // Privacy model:
 //   - Data content is NEVER stored on-chain (only commitment hashes)
-//   - Seller identity is hidden behind a public key hash
-//   - Buyer identity is hidden behind a public key hash
+//   - Seller and buyer identities are hidden behind a public key hash
 //   - Only the admin can resolve disputes (role-based access)
+//   - NIGHT is an UNSHIELDED token by protocol: payment amounts and payout
+//     addresses are public on-chain. The dataset itself remains private.
+//
+// Payments are denominated in STAR (1 NIGHT = 10^6 STAR).
 //
 // State machine:  active -> sold -> (disputed -> resolved | completed)
 //                                       |                      |
@@ -42,11 +45,19 @@ export sealed ledger admin: Bytes<32>;
 // Key: listing ID (hash of seller + nonce)
 export ledger listingSeller: Map<Bytes<32>, Bytes<32>>;         // seller public key hash
 export ledger listingDataCommitment: Map<Bytes<32>, Bytes<32>>; // persistentCommit of data
-export ledger listingPrice: Map<Bytes<32>, Uint<64>>;           // price in DUST
+export ledger listingPrice: Map<Bytes<32>, Uint<64>>;           // price in STAR
 export ledger listingState: Map<Bytes<32>, ListingState>;       // lifecycle state
 export ledger listingBuyer: Map<Bytes<32>, Bytes<32>>;          // buyer public key hash (zero if unsold)
 
-// Escrow: listing ID -> locked payment amount
+// Public listing metadata: UTF-8 JSON padded to 512 bytes
+// { "t": title, "d": description, "c": category, "s": size, "r": records }
+export ledger listingMeta: Map<Bytes<32>, Bytes<512>>;
+
+// Payout addresses (NIGHT is unshielded, so these are public by protocol)
+export ledger listingSellerAddr: Map<Bytes<32>, Bytes<32>>;
+export ledger listingBuyerAddr: Map<Bytes<32>, Bytes<32>>;
+
+// Escrow: listing ID -> locked payment amount in STAR
 export ledger escrow: Map<Bytes<32>, Uint<64>>;
 
 // Counters for tracking
@@ -117,11 +128,13 @@ constructor() {
 //
 // The seller provides:
 //   - dataHash: a hash of the data they want to sell (off-chain computed)
-//   - price: the price in DUST tokens
+//   - price: the price in STAR (1 NIGHT = 10^6 STAR)
+//   - meta: public listing metadata as UTF-8 JSON padded to 512 bytes
+//   - sellerAddr: the unshielded address that receives payment
 //
 // Privacy: The actual data never appears on-chain. Only the commitment
 // hash is stored, which hides the data content behind a random salt.
-export circuit listData(dataHash: Bytes<32>, price: Uint<64>): Bytes<32> {
+export circuit listData(dataHash: Bytes<32>, price: Uint<64>, meta: Bytes<512>, sellerAddr: Bytes<32>): Bytes<32> {
   // Price must be positive
   assert(disclose(price > (0 as Uint<64>)), "Price must be positive");
 
@@ -146,6 +159,8 @@ export circuit listData(dataHash: Bytes<32>, price: Uint<64>): Bytes<32> {
   listingPrice.insert(disclose(listingId), disclose(price));
   listingState.insert(disclose(listingId), ListingState.active);
   listingBuyer.insert(disclose(listingId), pad(32, ""));
+  listingMeta.insert(disclose(listingId), disclose(meta));
+  listingSellerAddr.insert(disclose(listingId), disclose(sellerAddr));
 
   listingCount.increment(1);
 
@@ -158,12 +173,12 @@ export circuit listData(dataHash: Bytes<32>, price: Uint<64>): Bytes<32> {
 
 // buyListing() allows a buyer to purchase a listed dataset.
 //
-// The buyer pays the listed price, which goes into escrow.
-// The data commitment is revealed to the buyer (they can verify it).
+// The buyer pays the listed price in NIGHT, which the contract receives into
+// escrow. The data commitment is revealed to the buyer (they can verify it).
 //
-// Privacy: The buyer's identity is hidden behind their public key hash.
-// The data content remains private — only the commitment is visible.
-export circuit buyListing(listingId: Bytes<32>): [] {
+// NIGHT is unshielded: the payment amount and the buyer's address become
+// public on-chain. The data content never does.
+export circuit buyListing(listingId: Bytes<32>, buyerAddr: Bytes<32>): [] {
   // Verify listing exists and is active
   assert(listingState.member(disclose(listingId)), "Listing not found");
   assert(disclose(listingState.lookup(disclose(listingId)) == ListingState.active), "Listing not active");
@@ -175,12 +190,18 @@ export circuit buyListing(listingId: Bytes<32>): [] {
   // Buyer cannot be the seller (prevent self-purchase)
   assert(disclose(buyerPk != listingSeller.lookup(disclose(listingId))), "Cannot buy your own listing");
 
+  const price = listingPrice.lookup(disclose(listingId));
+
+  // The contract must be able to hold what it receives; the caller's
+  // transaction supplies the matching NIGHT input for balancing.
+  receiveUnshielded(nativeToken(), disclose(price) as Uint<128>);
+
   // Record the buyer and update state
   listingBuyer.insert(disclose(listingId), disclose(buyerPk));
+  listingBuyerAddr.insert(disclose(listingId), disclose(buyerAddr));
   listingState.insert(disclose(listingId), ListingState.sold);
 
   // Lock payment in escrow
-  const price = listingPrice.lookup(disclose(listingId));
   escrow.insert(disclose(listingId), disclose(price));
 }
 
@@ -190,8 +211,9 @@ export circuit buyListing(listingId: Bytes<32>): [] {
 
 // confirmDelivery() finalizes the sale after the buyer verifies the data.
 //
-// The escrowed payment is released (removed from escrow).
-// Both parties' identities remain on-chain but the data content stays private.
+// The escrowed payment is released to the seller's address.
+// Both parties' identities remain behind their key hashes; the payout
+// address and amount are public because NIGHT is unshielded.
 export circuit confirmDelivery(listingId: Bytes<32>): [] {
   // Verify listing exists and is sold
   assert(listingState.member(disclose(listingId)), "Listing not found");
@@ -202,12 +224,24 @@ export circuit confirmDelivery(listingId: Bytes<32>): [] {
   const buyerPk = get_public_key(sk);
   assert(disclose(buyerPk == listingBuyer.lookup(disclose(listingId))), "Only buyer can confirm delivery");
 
+  const amount = escrow.lookup(disclose(listingId));
+
+  // Guard: the contract must actually hold the funds being released.
+  // Balance is fixed at the start of execution, so this reads the
+  // pre-transaction holdings.
+  assert(unshieldedBalanceGte(nativeToken(), disclose(amount) as Uint<128>), "Contract balance too low");
+
+  // Release escrow to the seller
+  const sellerAddr: Bytes<32> = listingSellerAddr.lookup(disclose(listingId));
+  sendUnshielded(
+    nativeToken(),
+    disclose(amount) as Uint<128>,
+    right<ContractAddress, UserAddress>(disclose(UserAddress { bytes: sellerAddr }))
+  );
+  escrow.remove(disclose(listingId));
+
   // Update listing state to completed
   listingState.insert(disclose(listingId), ListingState.completed);
-
-  // Release escrow (payment goes to seller — in a real system, this would
-  // transfer DUST tokens to the seller's address)
-  escrow.remove(disclose(listingId));
   completedCount.increment(1);
 }
 
@@ -241,7 +275,7 @@ export circuit disputeListing(listingId: Bytes<32>): [] {
 // RESOLVE DISPUTE — Admin resolves a disputed sale
 // ============================================================================
 
-// resolveDispute() allows the admin to resolve a dispute.
+// resolveDispute() allows the admin to resolve a disputed sale.
 //
 // If refundBuyer is true, the escrow is returned to the buyer.
 // If false, the payment goes to the seller.
@@ -257,18 +291,34 @@ export circuit resolveDispute(listingId: Bytes<32>, refundBuyer: Boolean): [] {
   const caller = get_public_key(sk);
   assert(disclose(caller == admin), "Only admin can resolve disputes");
 
-  // Update listing state to completed
-  listingState.insert(disclose(listingId), ListingState.completed);
+  const amount = escrow.lookup(disclose(listingId));
 
-  // Handle escrow based on dispute resolution
+  // Guard: the contract must actually hold the funds being released.
+  assert(unshieldedBalanceGte(nativeToken(), disclose(amount) as Uint<128>), "Contract balance too low");
+
   if (disclose(refundBuyer)) {
-    // Refund buyer — escrow returned (in real system, transfer back to buyer)
+    // Refund buyer — escrow returned
+    const buyerAddr: Bytes<32> = listingBuyerAddr.lookup(disclose(listingId));
+    sendUnshielded(
+      nativeToken(),
+      disclose(amount) as Uint<128>,
+      right<ContractAddress, UserAddress>(disclose(UserAddress { bytes: buyerAddr }))
+    );
     escrow.remove(disclose(listingId));
   } else {
-    // Pay seller — escrow released (in real system, transfer to seller)
+    // Pay seller — escrow released
+    const sellerAddr: Bytes<32> = listingSellerAddr.lookup(disclose(listingId));
+    sendUnshielded(
+      nativeToken(),
+      disclose(amount) as Uint<128>,
+      right<ContractAddress, UserAddress>(disclose(UserAddress { bytes: sellerAddr }))
+    );
     escrow.remove(disclose(listingId));
     completedCount.increment(1);
   }
+
+  // Update listing state to completed
+  listingState.insert(disclose(listingId), ListingState.completed);
 }
 
 // ============================================================================
@@ -303,6 +353,12 @@ export circuit getListingState(listingId: Bytes<32>): ListingState {
 export circuit getListingBuyer(listingId: Bytes<32>): Bytes<32> {
   assert(listingBuyer.member(disclose(listingId)), "Listing not found");
   return listingBuyer.lookup(disclose(listingId));
+}
+
+// Get listing metadata
+export circuit getListingMeta(listingId: Bytes<32>): Bytes<512> {
+  assert(listingMeta.member(disclose(listingId)), "Listing not found");
+  return listingMeta.lookup(disclose(listingId));
 }
 
 // Get escrow amount for a listing

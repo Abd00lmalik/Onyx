@@ -1,11 +1,14 @@
 /**
  * End-to-end smoke check for onyx-contracts.
  *
- * Reconnects to the deployed contract, reads its ledger state, and exits 0
- * on success. Used by `npm run test:e2e` and by the project's CI workflows.
+ * Reconnects to the deployed Onyx marketplace contract, reads its ledger state
+ * through the indexer, and exits 0 on success. Read-only: it never balances or
+ * submits transactions — full transaction flows are covered by
+ * `npm run test:phase5`. Used by `npm run test:e2e` and by CI workflows.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocket } from 'ws';
 
@@ -21,8 +24,11 @@ import { CompiledContract } from '@midnight-ntwrk/midnight-js-protocol/compact-j
 // @ts-expect-error wallet sync requires WebSocket
 globalThis.WebSocket = WebSocket;
 
-// Must match the privateStateId used at deploy time (witness-free → empty state).
-const PRIVATE_STATE_ID = 'helloWorldPrivateState';
+// Must match the privateStateId used by the deploy and Phase 5 scripts.
+const PRIVATE_STATE_ID = 'onyxMarketplacePrivateState';
+const PRIVATE_STATE_STORE = 'onyx-marketplace-state';
+const PRIVATE_STATE_PASSWORD =
+  process.env.PRIVATE_STATE_PASSWORD?.trim() || 'Local-Devnet-Development-Placeholder-1';
 
 // ─── Network configuration ─────────────────────────────────────────────────────
 
@@ -43,6 +49,31 @@ function isHexAddress(s: unknown): s is string {
   return typeof s === 'string' && /^[0-9a-fA-F]+$/.test(s) && s.length >= 32;
 }
 
+type OnyxPrivateState = { secretKey: Uint8Array; listingSalts: Record<string, Uint8Array> };
+
+// Same witnesses the deploy used. `local_secret_key` must keep returning the
+// deploy-time secret key, otherwise the sealed admin identity is lost.
+const witnesses = {
+  local_secret_key: (ctx: { privateState: OnyxPrivateState }): [OnyxPrivateState, Uint8Array] => [
+    ctx.privateState,
+    ctx.privateState.secretKey,
+  ],
+  get_random_salt: (ctx: { privateState: OnyxPrivateState }): [OnyxPrivateState, Uint8Array] => [
+    ctx.privateState,
+    randomBytes(32),
+  ],
+  store_listing_salt: (
+    ctx: { privateState: OnyxPrivateState },
+    listingId: Uint8Array,
+    salt: Uint8Array,
+  ): [OnyxPrivateState, []] => {
+    const key = Array.from(listingId)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+    return [{ ...ctx.privateState, listingSalts: { ...ctx.privateState.listingSalts, [key]: salt } }, []];
+  },
+};
+
 async function main() {
   // 1. Deployment sanity
   const deployment = getDeployment(network);
@@ -54,16 +85,18 @@ async function main() {
     fail(`Deployment address missing or invalid: ${JSON.stringify(deployment, null, 2)}`);
   }
 
-  // 2. Build wallet and providers
+  // 2. Build the compiled contract handle
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const zkConfigPath = path.resolve(__dirname, '..', 'contracts', 'managed', 'hello-world');
+  const zkConfigPath = path.resolve(__dirname, '..', 'contracts', 'managed', 'onyx-marketplace');
   const contractPath = path.join(zkConfigPath, 'contract', 'index.js');
   if (!fs.existsSync(contractPath)) fail('Compiled contract missing — run `npm run compile`.');
-  const HelloWorld = await import(pathToFileURL(contractPath).href);
-  const compiledContract = CompiledContract.make('hello-world', HelloWorld.Contract).pipe(
-    CompiledContract.withVacantWitnesses,
-    CompiledContract.withCompiledFileAssets(zkConfigPath),
-  );
+  const Onyx = await import(pathToFileURL(contractPath).href);
+  const compiledContract: any = (CompiledContract as any)
+    .make('onyx-marketplace', Onyx.Contract)
+    .pipe(
+      (CompiledContract as any).withWitnesses(witnesses),
+      (CompiledContract as any).withCompiledFileAssets(zkConfigPath),
+    );
 
   const walletCtx = await createWallet({ network, networkConfig, seed: SEED });
   await walletCtx.wallet.waitForSyncedState();
@@ -86,11 +119,9 @@ async function main() {
 
   const providers = {
     privateStateProvider: levelPrivateStateProvider({
-      privateStateStoreName: 'hello-world-state',
+      privateStateStoreName: PRIVATE_STATE_STORE,
       accountId: walletCtx.unshieldedKeystore.getBech32Address().toString(),
-      // SDK requires ≥16 chars. e2e-check is read-only so we don't expose
-      // the env-var override here — match the deploy script's local-devnet default.
-      privateStoragePasswordProvider: () => 'Local-Devnet-Development-Placeholder-1',
+      privateStoragePasswordProvider: async () => PRIVATE_STATE_PASSWORD,
     }),
     publicDataProvider: indexerPublicDataProvider(networkConfig.indexer, networkConfig.indexerWS),
     zkConfigProvider,
@@ -99,14 +130,21 @@ async function main() {
     midnightProvider: walletProvider,
   };
 
+  providers.privateStateProvider.setContractAddress(deployment.address as never);
+  // Seed a fresh private state only when none is stored: `findDeployedContract`
+  // unconditionally overwrites when `initialPrivateState` is supplied, which
+  // would drop the deploy-time secretKey (the sealed admin identity) and any
+  // stored listing salts.
+  const stored = await providers.privateStateProvider.get(PRIVATE_STATE_ID as never);
+
   // 3. Reconnect to the deployed contract — proves callTx interface is wired
   try {
-    await findDeployedContract(providers, {
+    await findDeployedContract(providers as never, {
       contractAddress: deployment.address,
       compiledContract: compiledContract as any,
       privateStateId: PRIVATE_STATE_ID,
-      initialPrivateState: {},
-    });
+      ...(stored ? {} : { initialPrivateState: { secretKey: randomBytes(32), listingSalts: {} } }),
+    } as never);
   } catch (err: any) {
     await walletCtx.wallet.stop();
     fail(`findDeployedContract threw: ${err?.message ?? err}`);
@@ -121,9 +159,23 @@ async function main() {
     fail(`queryContractState returned null for ${deployment.address}`);
   }
 
+  // 5. Decode the ledger so the read is proven against real structure, not
+  // just raw bytes.
+  let listingCount = -1;
+  let completedCount = -1;
+  try {
+    const led = Onyx.ledger(onChainState.data);
+    listingCount = Number(led.listingCount);
+    completedCount = Number(led.completedCount);
+  } catch (err: any) {
+    await walletCtx.wallet.stop();
+    fail(`ledger decode threw: ${err?.message ?? err}`);
+  }
+
   console.log(`✅ e2e-check passed`);
   console.log(`   contractAddress: ${deployment.address}`);
   console.log(`   network:         ${network}`);
+  console.log(`   listings:        ${listingCount} (${completedCount} completed)`);
 
   await walletCtx.wallet.stop();
   process.exit(0);

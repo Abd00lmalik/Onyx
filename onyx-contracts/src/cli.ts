@@ -55,6 +55,13 @@ const witnesses = {
 // the same private state.
 const PRIVATE_STATE_ID = 'onyxMarketplacePrivateState';
 
+// True only while building a circuit that takes a NIGHT input
+// (buyListing -> receiveUnshielded). Those transactions need an unshielded
+// signature that `finalizeRecipe` alone does not produce; the other circuits
+// must NOT be signed, because an extra unshielded signature is rejected by the
+// chain (InputsSignaturesLengthMismatch).
+let signUnshieldedInput = false;
+
 const { network, config: networkConfig } = resolveNetwork();
 const WALLET = getOrCreateWallet(network);
 const SEED = WALLET.seed;
@@ -65,6 +72,42 @@ const SEED = WALLET.seed;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const zkConfigPath = path.resolve(__dirname, '..', 'contracts', 'managed', 'onyx-marketplace');
+
+// ─── Contract input helpers ─────────────────────────────────────────────────
+
+const META_MAX_BYTES = 512;
+
+/** 64 hex chars -> Bytes<32> */
+function hexToBytes(hex: string, label: string): Uint8Array {
+  const h = hex.trim().toLowerCase().replace(/^0x/, '');
+  if (!/^[0-9a-f]{64}$/.test(h)) {
+    throw new Error(`${label} must be 64 hex characters (32 bytes), got ${h.length}`);
+  }
+  return new Uint8Array(Buffer.from(h, 'hex'));
+}
+
+/** Public listing metadata -> Bytes<512> (UTF-8 JSON, zero-padded) */
+function encodeMeta(meta: Record<string, string>): Uint8Array {
+  const json = JSON.stringify(meta);
+  const raw = Buffer.from(json, 'utf8');
+  if (raw.length > META_MAX_BYTES) {
+    throw new Error(`Listing metadata is ${raw.length} bytes, max ${META_MAX_BYTES}`);
+  }
+  const out = new Uint8Array(META_MAX_BYTES);
+  out.set(raw);
+  return out;
+}
+
+/** This wallet's unshielded payout address as Bytes<32> */
+function myAddress(walletCtx: WalletContext): Uint8Array {
+  const hex = walletCtx.unshieldedKeystore.getAddress() as unknown as string;
+  return hexToBytes(hex, 'Wallet address');
+}
+
+const STATE_NAMES = ['active', 'sold', 'disputed', 'completed'] as const;
+function stateName(state: number): string {
+  return STATE_NAMES[state] ?? `unknown(${state})`;
+}
 
 // Load compiled contract
 const contractPath = path.join(zkConfigPath, 'contract', 'index.js');
@@ -97,12 +140,19 @@ async function createProviders(walletCtx: WalletContext) {
     getEncryptionPublicKey: () => walletCtx.shieldedSecretKeys.encryptionPublicKey,
     async balanceTx(tx: any, ttl?: Date) {
       // balanceUnboundTransaction -> finalizeRecipe is the complete balancing
-      // path in wallet-sdk 1.x; the earlier explicit signRecipe step is gone.
+      // path in wallet-sdk 1.x, but finalizeRecipe never signs: an unshielded
+      // (NIGHT) input needs an explicit signRecipe with the account keystore.
       const recipe = await walletCtx.wallet.balanceUnboundTransaction(
         tx,
         { shieldedSecretKeys: walletCtx.shieldedSecretKeys, dustSecretKey: walletCtx.dustSecretKey },
         { ttl: ttl ?? new Date(Date.now() + 30 * 60 * 1000) },
       );
+      if (signUnshieldedInput) {
+        const signed = await walletCtx.wallet.signRecipe(recipe, (data: Uint8Array) =>
+          walletCtx.unshieldedKeystore.signData(data),
+        );
+        return walletCtx.wallet.finalizeRecipe(signed);
+      }
       return walletCtx.wallet.finalizeRecipe(recipe);
     },
     submitTx: (tx: any) => walletCtx.wallet.submitTransaction(tx) as any,
@@ -185,11 +235,21 @@ async function main() {
     console.log('  Connecting to contract...');
     const providers = await createProviders(walletCtx);
 
+    // findDeployedContract *stores* whatever `initialPrivateState` it is given,
+    // so passing `{}` would wipe the deploy-time secretKey that the sealed
+    // admin identity is derived from. Reconnect to the stored state instead,
+    // creating one only if this contract has never been initialised here.
+    providers.privateStateProvider.setContractAddress(deployment.address);
+    const storedPrivateState = await providers.privateStateProvider.get(PRIVATE_STATE_ID);
+    if (!storedPrivateState) {
+      await providers.privateStateProvider.set(PRIVATE_STATE_ID, { secretKey: randomBytes(32), listingSalts: {} });
+      console.log('  ℹ  No stored private state for this contract — initialised a fresh one.');
+    }
+
     const deployed: any = await findDeployedContract(providers, {
       compiledContract: compiledContract as any,
       contractAddress: deployment.address,
       privateStateId: PRIVATE_STATE_ID,
-      initialPrivateState: {},
     });
 
     console.log('  ✅ Connected!\n');
@@ -210,12 +270,20 @@ async function main() {
 
       switch (choice.trim()) {
         case '1': {
-          const dataHash = await rl.question('  Enter data hash (hex): ');
-          const priceStr = await rl.question('  Enter price in DUST: ');
-          const price = BigInt(priceStr);
-          console.log('\n  Submitting listing (this may take 30-60 seconds)...');
+          const dataHashHex = await rl.question('  Enter data hash (64 hex chars): ');
+          const priceStr = await rl.question('  Enter price in STAR (1 NIGHT = 1,000,000 STAR): ');
+          const title = await rl.question('  Title: ');
+          const description = await rl.question('  Description: ');
+          const category = await rl.question('  Category: ');
+          const size = await rl.question('  Size (e.g. 2.4 GB): ');
+          const records = await rl.question('  Records (e.g. 48200): ');
           try {
-            const tx = await deployed.callTx.listData(dataHash, price);
+            const dataHash = hexToBytes(dataHashHex, 'Data hash');
+            const price = BigInt(priceStr);
+            const meta = encodeMeta({ t: title, d: description, c: category, s: size, r: records });
+            const sellerAddr = myAddress(walletCtx);
+            console.log('\n  Submitting listing (this may take 30-60 seconds)...');
+            const tx = await deployed.callTx.listData(dataHash, price, meta, sellerAddr);
             console.log(`\n  ✅ Data listed successfully!`);
             console.log(`  Transaction ID: ${tx.public.txId}`);
             console.log(`  Block height: ${tx.public.blockHeight}\n`);
@@ -226,23 +294,30 @@ async function main() {
         }
 
         case '2': {
-          const listingId = await rl.question('  Enter listing ID: ');
-          console.log('\n  Submitting purchase...');
+          const listingIdHex = await rl.question('  Enter listing ID (64 hex chars): ');
           try {
-            const tx = await deployed.callTx.buyListing(listingId);
+            const listingId = hexToBytes(listingIdHex, 'Listing ID');
+            const buyerAddr = myAddress(walletCtx);
+            console.log('\n  Submitting purchase (pays the price in tNight)...');
+            // buyListing takes a NIGHT input (receiveUnshielded) -> the
+            // balancing recipe must be signed with the account keystore.
+            signUnshieldedInput = true;
+            const tx = await deployed.callTx.buyListing(listingId, buyerAddr);
+            signUnshieldedInput = false;
             console.log(`\n  ✅ Purchase successful!`);
             console.log(`  Transaction ID: ${tx.public.txId}\n`);
           } catch (error) {
-            console.error('\n  ❌ Failed:', error instanceof Error ? error.message : error);
+            signUnshieldedInput = false;
+            console.error('\n  ? Failed:', error instanceof Error ? error.message : error);
           }
           break;
         }
 
         case '3': {
-          const listingId = await rl.question('  Enter listing ID to confirm: ');
-          console.log('\n  Confirming delivery...');
+          const listingIdHex = await rl.question('  Enter listing ID to confirm (64 hex chars): ');
+          console.log('\n  Confirming delivery (releases escrow to the seller)...');
           try {
-            const tx = await deployed.callTx.confirmDelivery(listingId);
+            const tx = await deployed.callTx.confirmDelivery(hexToBytes(listingIdHex, 'Listing ID'));
             console.log(`\n  ✅ Delivery confirmed!`);
             console.log(`  Transaction ID: ${tx.public.txId}\n`);
           } catch (error) {
@@ -252,10 +327,10 @@ async function main() {
         }
 
         case '4': {
-          const listingId = await rl.question('  Enter listing ID to dispute: ');
+          const listingIdHex = await rl.question('  Enter listing ID to dispute (64 hex chars): ');
           console.log('\n  Submitting dispute...');
           try {
-            const tx = await deployed.callTx.disputeListing(listingId);
+            const tx = await deployed.callTx.disputeListing(hexToBytes(listingIdHex, 'Listing ID'));
             console.log(`\n  ✅ Dispute filed!`);
             console.log(`  Transaction ID: ${tx.public.txId}\n`);
           } catch (error) {
@@ -265,25 +340,37 @@ async function main() {
         }
 
         case '5': {
-          const listingId = await rl.question('  Enter listing ID: ');
+          const listingIdHex = await rl.question('  Enter listing ID (64 hex chars): ');
           console.log('\n  Fetching listing...');
           try {
+            const listingId = hexToBytes(listingIdHex, 'Listing ID');
             const contractState = await providers.publicDataProvider.queryContractState(deployment.address);
-            if (contractState) {
-              const ledgerState = OnyxMarketplace.ledger(contractState.data);
-              if (ledgerState.listings && ledgerState.listings[listingId]) {
-                const listing = ledgerState.listings[listingId];
-                console.log(`\n  Listing: ${listingId}`);
-                console.log(`  Seller: ${Buffer.from(listing.seller).toString('hex')}`);
-                console.log(`  Price: ${listing.price.toString()} DUST`);
-                console.log(`  State: ${listing.state}`);
-                console.log(`  Data Commitment: ${Buffer.from(listing.dataCommitment).toString('hex')}\n`);
-              } else {
-                console.log('\n  📋 Listing not found\n');
-              }
-            } else {
+            if (!contractState) {
               console.log('\n  📋 No contract state found\n');
+              break;
             }
+            const ledgerState = OnyxMarketplace.ledger(contractState.data);
+            if (!ledgerState.listingSeller.member(listingId)) {
+              console.log('\n  📋 Listing not found\n');
+              break;
+            }
+            const metaRaw = Buffer.from(ledgerState.listingMeta.lookup(listingId)).toString('utf8').replace(/\0+$/, '');
+            let meta = '';
+            try {
+              const parsed = JSON.parse(metaRaw || '{}');
+              meta = `  Title:       ${parsed.t ?? '-'}\n  Category:    ${parsed.c ?? '-'}\n  Size:        ${parsed.s ?? '-'}\n  Records:     ${parsed.r ?? '-'}\n  Description: ${parsed.d ?? '-'}\n`;
+            } catch {
+              meta = `  Metadata:    (unparseable) ${metaRaw}\n`;
+            }
+            console.log(`
+  Listing:       ${listingIdHex}
+  Seller:        ${Buffer.from(ledgerState.listingSeller.lookup(listingId)).toString('hex')}
+  Seller payout: ${Buffer.from(ledgerState.listingSellerAddr.lookup(listingId)).toString('hex')}
+  Price:         ${ledgerState.listingPrice.lookup(listingId).toString()} STAR
+  State:         ${stateName(ledgerState.listingState.lookup(listingId) as unknown as number)}
+  Buyer:         ${Buffer.from(ledgerState.listingBuyer.lookup(listingId)).toString('hex')}
+  Commitment:    ${Buffer.from(ledgerState.listingDataCommitment.lookup(listingId)).toString('hex')}
+${meta}`);
           } catch (error) {
             console.error('\n  ❌ Failed:', error instanceof Error ? error.message : error);
           }

@@ -59,3 +59,12 @@ deployments/
 
 # Misc
 *.tsbuildinfo
+
+# Deploy runtime artifacts (untracked logs, progress, local chain state)
+.deploy-progress.json
+.deploy-detached.log
+deploy-bg.log
+onyx-contracts/.deploy-progress.json
+onyx-contracts/.deploy-detached.log
+onyx-contracts/midnight-level-db/
+midnight-level-db/

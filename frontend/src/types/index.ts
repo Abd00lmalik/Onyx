@@ -7,11 +7,24 @@ export interface Listing {
   price: bigint
   state: ListingState
   buyer: string
+  /** Decoded on-chain metadata (`listingMeta`). Optional until Phase 4 rewires the view layer. */
+  title?: string
+  description?: string
+  category?: string
+  size?: string
+  records?: string
+  /** Seller payout address (32-byte hex) recorded by `listData`. */
+  sellerAddr?: string
+  /** Buyer address (32-byte hex) recorded by `buyListing`. */
+  buyerAddr?: string
+  /** NIGHT currently held in escrow for this listing, in STAR. */
+  escrow?: bigint
 }
 
 export interface WalletState {
   connected: boolean
   address: string | null
+  addressHex: string | null
   shieldedAddress: string | null
   balance: bigint
   dustBalance: bigint

@@ -13,9 +13,12 @@ export type Witnesses<PS> = {
 export type ImpureCircuits<PS> = {
   listData(context: __compactRuntime.CircuitContext<PS>,
            dataHash_0: Uint8Array,
-           price_0: bigint): __compactRuntime.CircuitResults<PS, Uint8Array>;
+           price_0: bigint,
+           meta_0: Uint8Array,
+           sellerAddr_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
   buyListing(context: __compactRuntime.CircuitContext<PS>,
-             listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+             listingId_0: Uint8Array,
+             buyerAddr_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   confirmDelivery(context: __compactRuntime.CircuitContext<PS>,
                   listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   disputeListing(context: __compactRuntime.CircuitContext<PS>,
@@ -33,6 +36,8 @@ export type ImpureCircuits<PS> = {
                   listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, ListingState>;
   getListingBuyer(context: __compactRuntime.CircuitContext<PS>,
                   listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
+  getListingMeta(context: __compactRuntime.CircuitContext<PS>,
+                 listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
   getEscrow(context: __compactRuntime.CircuitContext<PS>,
             listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, bigint>;
   getTotalListings(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, bigint>;
@@ -43,9 +48,12 @@ export type ImpureCircuits<PS> = {
 export type ProvableCircuits<PS> = {
   listData(context: __compactRuntime.CircuitContext<PS>,
            dataHash_0: Uint8Array,
-           price_0: bigint): __compactRuntime.CircuitResults<PS, Uint8Array>;
+           price_0: bigint,
+           meta_0: Uint8Array,
+           sellerAddr_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
   buyListing(context: __compactRuntime.CircuitContext<PS>,
-             listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+             listingId_0: Uint8Array,
+             buyerAddr_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   confirmDelivery(context: __compactRuntime.CircuitContext<PS>,
                   listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   disputeListing(context: __compactRuntime.CircuitContext<PS>,
@@ -63,6 +71,8 @@ export type ProvableCircuits<PS> = {
                   listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, ListingState>;
   getListingBuyer(context: __compactRuntime.CircuitContext<PS>,
                   listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
+  getListingMeta(context: __compactRuntime.CircuitContext<PS>,
+                 listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
   getEscrow(context: __compactRuntime.CircuitContext<PS>,
             listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, bigint>;
   getTotalListings(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, bigint>;
@@ -76,9 +86,12 @@ export type PureCircuits = {
 export type Circuits<PS> = {
   listData(context: __compactRuntime.CircuitContext<PS>,
            dataHash_0: Uint8Array,
-           price_0: bigint): __compactRuntime.CircuitResults<PS, Uint8Array>;
+           price_0: bigint,
+           meta_0: Uint8Array,
+           sellerAddr_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
   buyListing(context: __compactRuntime.CircuitContext<PS>,
-             listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+             listingId_0: Uint8Array,
+             buyerAddr_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   confirmDelivery(context: __compactRuntime.CircuitContext<PS>,
                   listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   disputeListing(context: __compactRuntime.CircuitContext<PS>,
@@ -96,6 +109,8 @@ export type Circuits<PS> = {
                   listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, ListingState>;
   getListingBuyer(context: __compactRuntime.CircuitContext<PS>,
                   listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
+  getListingMeta(context: __compactRuntime.CircuitContext<PS>,
+                 listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
   getEscrow(context: __compactRuntime.CircuitContext<PS>,
             listingId_0: Uint8Array): __compactRuntime.CircuitResults<PS, bigint>;
   getTotalListings(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, bigint>;
@@ -134,6 +149,27 @@ export type Ledger = {
     [Symbol.iterator](): Iterator<[Uint8Array, ListingState]>
   };
   listingBuyer: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(key_0: Uint8Array): boolean;
+    lookup(key_0: Uint8Array): Uint8Array;
+    [Symbol.iterator](): Iterator<[Uint8Array, Uint8Array]>
+  };
+  listingMeta: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(key_0: Uint8Array): boolean;
+    lookup(key_0: Uint8Array): Uint8Array;
+    [Symbol.iterator](): Iterator<[Uint8Array, Uint8Array]>
+  };
+  listingSellerAddr: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(key_0: Uint8Array): boolean;
+    lookup(key_0: Uint8Array): Uint8Array;
+    [Symbol.iterator](): Iterator<[Uint8Array, Uint8Array]>
+  };
+  listingBuyerAddr: {
     isEmpty(): boolean;
     size(): bigint;
     member(key_0: Uint8Array): boolean;

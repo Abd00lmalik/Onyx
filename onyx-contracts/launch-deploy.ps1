@@ -6,8 +6,19 @@ $progressFile = "$deployDir\.deploy-progress.json"
 # Clean old progress
 Remove-Item $progressFile -ErrorAction SilentlyContinue
 
-# Set environment
-$env:MIDNIGHT_WALLET_MNEMONIC = "federal dumb raven sun suffer solution equip trap glue obey crumble marble pitch wisdom profit under viable nuclear boy road public curtain model fiscal"
+# Wallet phrase must come from the caller's environment — never hard-code it.
+if (-not $env:MIDNIGHT_WALLET_MNEMONIC) {
+  $stateFile = Join-Path $deployDir ".midnight-state.json"
+  if (Test-Path $stateFile) {
+    try {
+      $state = Get-Content $stateFile -Raw | ConvertFrom-Json
+      $env:MIDNIGHT_WALLET_MNEMONIC = $state.wallets.preprod.mnemonic
+    } catch { }
+  }
+}
+if (-not $env:MIDNIGHT_WALLET_MNEMONIC) {
+  throw "MIDNIGHT_WALLET_MNEMONIC is not set and no wallet was found in .midnight-state.json"
+}
 $env:NODE_OPTIONS = "--max-old-space-size=8192"
 $env:PATH = "$env:APPDATA\npm;$env:LOCALAPPDATA\pnpm;$env:PATH"
 

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Shield,
@@ -13,7 +14,8 @@ import {
 import { WaveBackground } from '../components/layout/WaveBackground'
 import { Button } from '../components/ui/Button'
 import { Reveal } from '../components/ui/Reveal'
-import { MOCK_STATS } from '../lib/mockData'
+import { useApp } from '../context/app-context'
+import { formatNight } from '../lib/format'
 
 const steps = [
   {
@@ -169,6 +171,13 @@ function HeroIllustration() {
 }
 
 export function HomePage() {
+  const { marketplace } = useApp()
+  const { fetchListings, stats, loading } = marketplace
+
+  useEffect(() => {
+    void fetchListings()
+  }, [fetchListings])
+
   return (
     <div className="min-h-screen">
       {/* Hero */}
@@ -282,20 +291,20 @@ export function HomePage() {
               {
                 icon: Database,
                 label: 'Total Listings',
-                value: MOCK_STATS.totalListings,
+                value: loading ? '…' : stats.totalListings.toLocaleString('en-US'),
                 note: 'Across all categories',
               },
               {
                 icon: BadgeCheck,
                 label: 'Completed Sales',
-                value: MOCK_STATS.completedSales,
-                note: 'Verified via ZK proofs',
+                value: loading ? '…' : stats.completedSales.toLocaleString('en-US'),
+                note: 'Settled on-chain',
               },
               {
                 icon: TrendingUp,
                 label: 'Total Volume',
-                value: MOCK_STATS.totalVolume.toLocaleString(),
-                note: 'Settled off-chain',
+                value: loading ? '…' : formatNight(stats.totalVolume),
+                note: 'NIGHT listed across all datasets',
               },
             ].map((stat, i) => (
               <Reveal key={stat.label} delay={i * 100}>
