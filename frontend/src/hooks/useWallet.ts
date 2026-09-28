@@ -4,6 +4,7 @@ import { NETWORK } from '@/lib/constants'
 import { defaultServiceConfig, initNetwork } from '@/lib/midnight'
 import { unshieldedToken } from '@midnight-ntwrk/midnight-js-protocol/ledger'
 import { createWalletAdapter, type OnyxWalletAdapter } from '@/lib/wallet-adapter'
+import { createBridgeApi, e2eOpts } from '@/lib/e2e-api'
 
 const initialWalletState: WalletState = {
   connected: false,
@@ -37,7 +38,12 @@ export function useWallet() {
     setError(null)
     try {
       initNetwork()
-      const wallet = getInjectedWallet()
+      // Headless-test path: window.__ONYX_E2E__ routes the connection to the
+      // local bridge instead of the Lace extension (scripts/phase6-ui-e2e.mjs).
+      const e2e = e2eOpts()
+      const wallet = e2e
+        ? { connect: async () => createBridgeApi(e2e) }
+        : getInjectedWallet()
       if (!wallet) {
         throw new Error('No Midnight wallet found. Please install the Lace wallet extension.')
       }

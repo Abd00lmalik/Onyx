@@ -20,6 +20,9 @@ export type OnyxWalletAdapter = {
   readonly unshieldedAddressHex: string
   readonly coinPublicKey: string
   readonly encryptionPublicKey: string
+  /** midnight-js-contracts calls these as methods when building call txs. */
+  getCoinPublicKey(): string
+  getEncryptionPublicKey(): string
   balanceTx(tx: UnboundTransaction, ttl?: Date): Promise<FinalizedTransaction>
   submitTx(tx: FinalizedTransaction): Promise<TransactionId>
 }
@@ -49,6 +52,14 @@ export async function createWalletAdapter(api: ConnectedAPI): Promise<OnyxWallet
     unshieldedAddressHex,
     coinPublicKey: keyToHex(shielded.shieldedCoinPublicKey, 'shield-cpk'),
     encryptionPublicKey: keyToHex(shielded.shieldedEncryptionPublicKey, 'shield-epk'),
+
+    getCoinPublicKey(): string {
+      return keyToHex(shielded.shieldedCoinPublicKey, 'shield-cpk')
+    },
+
+    getEncryptionPublicKey(): string {
+      return keyToHex(shielded.shieldedEncryptionPublicKey, 'shield-epk')
+    },
 
     async balanceTx(tx: UnboundTransaction): Promise<FinalizedTransaction> {
       const hex = bytesToHex(tx.serialize())

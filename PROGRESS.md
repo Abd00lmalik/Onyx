@@ -250,3 +250,53 @@ Fixes landed during Phase 5 debugging (all verified by the 49/49 run):
   retries; `callTx` retries transient `Wallet.Sync`/indexer failures (observed recoveries).
 
 **Gate**: all boxes checked → report to user → start Phase 6 (verify & ship).
+
+---
+
+## Phase 6 — headless Chrome E2E (list + buy through the real frontend)
+
+Full list-and-buy cycle driven by puppeteer against the production React UI, no Lace available
+headlessly, so a Node bridge stands in for the injected wallet:
+
+- [x] **Bridge server** `onyx-contracts/scripts/e2e-bridge.ts` (port 8787): serves the two synced
+      wallets (deployer = seller, buyer) over HTTP — `GET /{role}/config|balances`,
+      `POST /{role}/balance|submit`. Browser hex → Node `Transaction.deserialize` →
+      `balanceUnboundTransaction` → `signRecipe` (signed variant preferred; unsigned fallback
+      for `InputsSignaturesLengthMismatch`) → back to the page. Serial per-wallet mutex,
+      self-healing submit retries (variant swap on signature mismatch, re-balance on dust-root
+      error 170), dust refill via ported `settleDust`/`ensureDust` with
+      `TRANSIENT_RE`/`DUST_STALE_RE` classification, buyer funded 1000 NIGHT at startup when low
+- [x] **Frontend injection** `frontend/src/lib/e2e-api.ts` + `useWallet.ts`: when
+      `window.__ONYX_E2E__` is set (via `page.evaluateOnNewDocument`), `connect()` returns a
+      bridge-backed `ConnectedAPI` instead of `getInjectedWallet()`; everything downstream
+      (adapter, contract calls, HTTP proof server, indexer polling) is the real production path.
+      Added `getCoinPublicKey()`/`getEncryptionPublicKey()` to `OnyxWalletAdapter`
+- [x] **Harness** `frontend/scripts/phase6-ui-e2e.mjs`: spawns bridge + `vite preview`, two
+      incognito contexts (seller/buyer), connect → /list → fill → upload → List Dataset →
+      /browse → buy → sold state; screenshots to `frontend/.e2e-artifacts/` (gitignored)
+- [x] **Stable green**: back-to-back PASS runs on the final code (run8 16:29, run9 16:32 local),
+      5 PASSes total across the loop
+- [x] **Gate re-run** all green after harness changes: frontend `lint` 0/0 · `build` ·
+      `test:smoke` 12/12 · `test:package` 22/22 · `test:read` · `test:wiring` · `test:ui`, plus
+      bridge `tsc --noEmit` clean
+
+Fixes landed during Phase 6 debugging:
+
+- **No `while…else` in JS** — harness loop syntax error.
+- **Session wallet role mapping** — `seller → deployer` for bridge routes.
+- **State loss on navigation** — `page.goto` resets the React wallet context; every step now
+  re-checks and clicks Connect Wallet (`ensureConnected`).
+- **IPv6 localhost** — Chrome resolves `localhost` → `::1` while the proof server binds IPv4;
+  puppeteer runs with `--host-resolver-rules=MAP localhost 127.0.0.1`.
+- **False-positive error detection** — destructive `bg-danger` styling on "File Dispute" counted
+  as an error; errors now exclude buttons and require 2 consecutive strikes.
+- **Dust exhaustion** — buyer fee burn left <1e15 DUST and the generic
+  `balancing failed for both variants` masked the real cause: `balanceTxOnce` now carries the
+  inner error text so the retry wrapper classifies dust/transient; bridge startup funds the
+  buyer and tops dust up to 3e15; harness preflight waits for refill.
+- **`estimateTransactionFee` hang** — the wasm fee-estimation call blocks the Node event loop
+  for minutes (timers can't fire → CLOSE_WAIT zombie sockets, UI stalls). Removed; a 300s
+  `Promise.race` watchdog on `POST /balance` keeps the handler honest.
+- Harness catches now log the underlying exception message + `page.on('crash')` for diagnosis.
+
+**Gate**: all boxes checked → headless list+buy stable → report to user → ship.

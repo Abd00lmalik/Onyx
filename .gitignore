@@ -68,3 +68,7 @@ onyx-contracts/.deploy-progress.json
 onyx-contracts/.deploy-detached.log
 onyx-contracts/midnight-level-db/
 midnight-level-db/
+
+# Headless E2E harness artifacts
+frontend/.e2e-artifacts/
+e2e-bridge.log
