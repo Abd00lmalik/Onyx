@@ -42,7 +42,17 @@ export function initNetwork() {
 let zkConfig: FetchZkConfigProvider<string> | null = null
 function zkConfigProvider(): ZKConfigProvider<string> {
   initNetwork()
-  if (!zkConfig) zkConfig = new FetchZkConfigProvider<string>(zkArtifactsUrl())
+  if (!zkConfig) {
+    // FetchZkConfigProvider stores the fetch reference and invokes it as
+    // `this.fetchFunc(url, ...)` — a method call whose `this` is the provider
+    // instance. Native window.fetch rejects any receiver other than Window with
+    // "Illegal invocation", so pass an explicitly receiver-correct fetch
+    // (its constructor default `fetch` keeps whatever `this` it was captured
+    // with — in Node tests that is harmless, in the browser it throws).
+    zkConfig = new FetchZkConfigProvider<string>(zkArtifactsUrl(), (input, init) =>
+      globalThis.fetch(input, init),
+    )
+  }
   return zkConfig
 }
 
