@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useWallet } from '@/hooks/useWallet'
 import { useContract } from '@/hooks/useContract'
 import { useMarketplace } from '@/hooks/useMarketplace'
@@ -18,16 +18,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const marketplace = useMarketplace(adapter, config)
   const { fetchListings } = marketplace
 
+  // Auto-connect the contract once per wallet session. Failures are logged by
+  // useContract; retrying in a render loop would just hammer the indexer.
+  const autoConnectTried = useRef(false)
   useEffect(() => {
-    if (connected && adapter && !contractHandle && !contractLoading) {
-      void connectContract()
+    if (!connected || !adapter) {
+      autoConnectTried.current = false
+      return
+    }
+    if (!contractHandle && !contractLoading && !autoConnectTried.current) {
+      autoConnectTried.current = true
+      void connectContract().catch(() => {})
     }
   }, [connected, adapter, contractHandle, contractLoading, connectContract])
 
   const ensureContract = useCallback(async () => {
     if (contractHandle) return
-    const deployed = await connectContract()
-    if (!deployed) throw new Error('Could not connect to the Onyx contract')
+    // connectContract rethrows the underlying error — let it reach the form.
+    await connectContract()
   }, [contractHandle, connectContract])
 
   const refresh = useCallback(async () => {

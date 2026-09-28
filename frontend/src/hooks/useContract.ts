@@ -54,8 +54,13 @@ export function useContract(adapter: OnyxWalletAdapter | null, config?: ServiceC
       setContract(handle)
       return deployed
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect to contract')
-      return null
+      const message = err instanceof Error ? err.message : 'Failed to connect to contract'
+      // Surface the real cause (DevTools + the form's error box) instead of a
+      // generic "could not connect" — fetch/CORS/private-state failures all
+      // arrive here.
+      console.error('[onyx] contract connection failed:', err)
+      setError(message)
+      throw err instanceof Error ? err : new Error(message)
     } finally {
       setLoading(false)
     }
