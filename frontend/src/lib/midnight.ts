@@ -52,19 +52,16 @@ function getCompiledContract() {
   initNetwork()
   if (!compiledContract) {
     const cc = CompiledContract as unknown as {
-      make: (
-        tag: string,
-        ctor: unknown,
-      ) => {
-        pipe: (fn: (self: unknown) => unknown) => { pipe: (fn: (self: unknown) => unknown) => unknown }
-      }
+      make: (tag: string, ctor: unknown) => { pipe: (...fns: unknown[]) => unknown }
       withWitnesses: (w: unknown) => (self: unknown) => unknown
       withCompiledFileAssets: (path: string) => (self: unknown) => unknown
     }
+    // ONE pipe call with both combinators. `withWitnesses`/`withCompiledFileAssets`
+    // return `{ ...self }` — an object spread that drops the prototype carrying
+    // `.pipe` — so chaining `.pipe(a).pipe(b)` throws "pipe is not a function".
     compiledContract = cc
       .make('onyx-marketplace', OnyxLedger.Contract)
-      .pipe(cc.withWitnesses(witnesses))
-      .pipe(cc.withCompiledFileAssets(ZK_ARTIFACTS_PATH))
+      .pipe(cc.withWitnesses(witnesses), cc.withCompiledFileAssets(ZK_ARTIFACTS_PATH))
   }
   return compiledContract
 }
