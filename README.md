@@ -341,11 +341,11 @@ PROOF_SERVER_URL=http://localhost:6300
 
 | Phase | Deliverable | Status |
 |---|---|---|
-| Phase 1 | Smart contract (Compact) | In Progress |
-| Phase 2 | CLI tool for testing | Planned |
-| Phase 3 | Frontend (React) | Planned |
-| Phase 4 | Integration testing | Planned |
-| Phase 5 | Preprod deployment | Planned |
+| Phase 1 | Smart contract (Compact) | Complete |
+| Phase 2 | CLI tool for testing | Complete |
+| Phase 3 | Frontend (React) | Complete |
+| Phase 4 | Integration testing | Complete |
+| Phase 5 | Preprod deployment | Complete (scripted E2E 49/49) |
 | Phase 6 | User testing + feedback | Planned |
 | Phase 7 | Mainnet launch | Planned |
 
