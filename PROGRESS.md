@@ -300,3 +300,33 @@ Fixes landed during Phase 6 debugging:
 - Harness catches now log the underlying exception message + `page.on('crash')` for diagnosis.
 
 **Gate**: all boxes checked → headless list+buy stable → report to user → ship.
+
+### Phase 6 addendum — deployed-site `'check' / Failed to fetch` fix
+
+The Vercel build failed every proof op (`Unexpected error submitting scoped
+transaction ... 'check' returned an error: TypeError: Failed to fetch`) while
+local/headless worked. Diagnosed with `frontend/scripts/proof-probe.mjs` (live
+origin in headless Chrome + CDP network capture):
+
+- The deployed bundle baked `http://localhost:6300` (no `VITE_PROOF_SERVER_URL`).
+- Chrome 153 Local Network Access **denied** the public-origin → loopback request
+  (`Permission was denied for this request to access the 'loopback' address
+  space`); the stock `midnightntwrk/proof-server:8.1.0` emits no
+  `Access-Control-Allow-Private-Network` grant either.
+- `localhost` resolves to IPv6 where the Docker proof server RSTs
+  (same quirk that forced `--host-resolver-rules` in the harness).
+
+Fix (both layers shipped):
+
+- **Public tunnel (steady state)**: `cloudflared tunnel --url http://127.0.0.1:6300`
+  → Vercel project env `VITE_PROOF_SERVER_URL=https://*.trycloudflare.com` →
+  `vercel redeploy`. Probe now returns `REACHED SERVER` from the live origin;
+  bundle grep confirms the tunnel URL and no `localhost:6300`.
+- **Local fallback**: `onyx-contracts/scripts/proof-proxy.mjs` mirrors CORS and
+  adds `Access-Control-Allow-Private-Network: true` on 127.0.0.1:6301 (verified
+  via preflight curl); using it from the deployed site still requires allowing
+  "Local network access" for the origin in Chrome site settings (the user's
+  profile had it dismissed/blocked).
+- Docs in README (`Deploy on Vercel → Proof server for the deployed site`),
+  `.vercel/` gitignored, gate re-run green (lint/build).
+

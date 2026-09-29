@@ -69,6 +69,31 @@ Live site: [https://onyx-market.vercel.app](https://onyx-market.vercel.app)
 2. Use the root `vercel.json` (builds `frontend/`), or set **Root Directory** to `frontend`
 3. Deploy
 
+#### Proof server for the deployed site
+
+Browsers block requests from a public `https://` origin to a local
+`http://localhost:6300` proof server (Chrome Local Network Access permission;
+the stock proof-server image also omits the `Access-Control-Allow-Private-Network`
+CORS grant), and `localhost` resolves to IPv6 where the Docker proof server
+resets connections. The deployed build therefore sets the project env var
+`VITE_PROOF_SERVER_URL` to a **public tunnel** in front of the local proof server:
+
+```powershell
+# Start a quick tunnel (URL changes on every restart!):
+cloudflared tunnel --url http://127.0.0.1:6300
+# Then update the Vercel env var to the printed https://*.trycloudflare.com URL:
+npx vercel env add VITE_PROOF_SERVER_URL production   # value from the tunnel output
+npx vercel redeploy <latest-deployment-url>           # env is baked at build time
+```
+
+For local-only fallback there is a CORS/LNA-aware proxy that adds the missing
+headers (target `http://localhost:6301`, requires allowing "Local network
+access" for the site in Chrome's site settings):
+
+```powershell
+node onyx-contracts/scripts/proof-proxy.mjs   # 127.0.0.1:6301 -> 127.0.0.1:6300
+```
+
 ## The Problem
 
 Data is the most valuable asset in the digital economy, but the current model is broken:
@@ -334,7 +359,8 @@ pnpm frontend dev
 ```env
 CONTRACT_ADDRESS=your_deployed_contract_address
 NETWORK_ID=testnet
-PROOF_SERVER_URL=http://localhost:6300
+# Frontend override for the proof server (defaults to http://localhost:6300):
+VITE_PROOF_SERVER_URL=http://localhost:6300
 ```
 
 ## Roadmap
